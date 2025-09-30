@@ -1,67 +1,100 @@
-use std::ptr::null_mut;
-use windows::Win32::{
-    Foundation::{LPARAM, LRESULT, WPARAM},
-    System::LibraryLoader::GetModuleHandleW,
-    UI::{
-        Input::KeyboardAndMouse::{GetKeyboardLayout, ToUnicodeEx},
-        WindowsAndMessaging::{
-            CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage,
-            HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, HC_ACTION, WM_KEYDOWN, WM_SYSKEYDOWN,
-        },
-    },
+mod key_hook;
+mod platform;
+
+use std::{
+    sync::{Arc, Mutex, OnceLock},
+    thread,
 };
 
-static mut HOOK: HHOOK = HHOOK(null_mut()); // ✅ 포인터로 초기화
+use eframe::{
+    egui,
+    egui::{Color32, Rgba},
+};
+use raw_window_handle::HasWindowHandle;
 
-unsafe extern "system" fn low_level_keyboard_proc(
-    n_code: i32,
-    w_param: WPARAM,
-    l_param: LPARAM,
-) -> LRESULT {
-    if n_code == HC_ACTION as i32 {
-        let kb: &KBDLLHOOKSTRUCT = &*(l_param.0 as *const KBDLLHOOKSTRUCT);
-        let msg = w_param.0 as u32;
+struct App {
+    patched_hwnd: OnceLock<isize>,
+    current_key: Arc<Mutex<Option<String>>>,
+}
 
-        if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
-            let vk = kb.vkCode;
+impl App {
+    fn new() -> Self {
+        let key_state = Arc::new(Mutex::new(None));
+        let key_state_clone = key_state.clone();
 
-            if let Some(ch) = vk_to_text(vk) {
-                println!("VK={vk:#04X} {ch}");
-            } else {
-                println!("VK={vk:#04X}");
+        thread::spawn(move || unsafe {
+            key_hook::register_hook(move |vk, msg| {
+                if msg == 256 || msg == 260 {
+                    let text = key_hook::vk_to_text(vk);
+
+                    let mut lock = key_state_clone.lock().unwrap();
+                    *lock = Some(text);
+                }
+            });
+        });
+        Self {
+            patched_hwnd: OnceLock::new(),
+            current_key: key_state,
+        }
+    }
+}
+
+impl eframe::App for App {
+    // 창 배경을 완전 투명으로
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        Rgba::TRANSPARENT.to_array()
+    }
+
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(handle) = frame.window_handle() {
+                platform::make_click_through_windows(&handle);
+                // eframe이 raw_window_handle을 노출 (PR/이슈에서 합의된 경로)
+                // HWND 뽑기
+                // if let raw_window_handle::RawWindowHandle::Win32(h) = raw {
+                //     let hwnd = h.hwnd.get() as isize;
+                //     // 아직 적용 안 했거나, 핸들이 바뀐 경우 재적용
+                //     let need = self
+                //         .patched_hwnd
+                //         .get()
+                //         .map(|saved| *saved != hwnd)
+                //         .unwrap_or(true);
+                //     if need {
+                //         unsafe { win::make_click_through(hwnd) };
+                //         let _ = self.patched_hwnd.set(hwnd);
+                //     }
+                // }
             }
         }
-    }
-    CallNextHookEx(HOOK, n_code, w_param, l_param)
-}
 
-unsafe fn vk_to_text(vk: u32) -> Option<String> {
-    let layout = GetKeyboardLayout(0);   // HKL
-    let keystate = [0u8; 256];
-    let mut buf = [0u16; 8];
+        // CentralPanel의 프레임/배경을 끕니다
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none()) // <- 배경 채우지 않기
+            .show(ctx, |ui| {
+                ui.label("Frameless Transparent Window");
+                ui.label(self.current_key.lock().unwrap().clone().unwrap_or_default());
+            });
 
-    // ✅ 마지막 파라미터: HKL (Option 아님)
-    let rc = ToUnicodeEx(vk, 0, &keystate, &mut buf, 0, layout);
-
-    if rc > 0 {
-        Some(String::from_utf16_lossy(&buf[..rc as usize]))
-    } else {
-        None
+        ctx.request_repaint();
     }
 }
 
-fn main() {
-    unsafe {
-        let hmod = GetModuleHandleW(None).expect("GetModuleHandleW failed");
+fn main() -> eframe::Result<()> {
+    // 장식 제거 + 투명 창
+    let viewport = egui::ViewportBuilder::default()
+        .with_always_on_top()
+        .with_decorations(false)
+        .with_transparent(true); // OS가 지원하면 진짜 투명
 
-        // ✅ .into() 없이 그대로 전달
-        HOOK = SetWindowsHookExW(WH_KEYBOARD_LL, Some(low_level_keyboard_proc), hmod, 0)
-            .expect("SetWindowsHookExW failed");
+    let options = eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    };
 
-        let mut msg = MSG::default();
-        while GetMessageW(&mut msg, None, 0, 0).into() {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-    }
+    eframe::run_native(
+        "Transparent Window",
+        options,
+        Box::new(|cc| Ok(Box::new(App::new()))),
+    )
 }

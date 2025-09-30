@@ -12,4 +12,7 @@ windows = { version = "0.58", features = [
     "Win32_System_LibraryLoader",
     "Win32_Globalization",
 ] }
-winit = "0.30.12"
+winit = { version = "0.30" }
+egui = "0.29"
+egui-winit = "0.29"
+eframe = "0.29"

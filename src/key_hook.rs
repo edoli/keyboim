@@ -1,0 +1,117 @@
+use std::ptr::null_mut;
+use windows::Win32::{
+    Foundation::{LPARAM, LRESULT, WPARAM},
+    System::LibraryLoader::GetModuleHandleW,
+    UI::{
+        Input::KeyboardAndMouse::{GetKeyboardLayout, ToUnicodeEx},
+        WindowsAndMessaging::{
+            CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage,
+            HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+        },
+    },
+};
+
+static mut HOOK: HHOOK = HHOOK(null_mut());
+static mut CALLBACK: Option<Box<dyn FnMut(u32, u32) + Send>> = None; // ✅ 사용자 콜백 저장
+
+/// ✅ 사용자 콜백을 등록하고 후킹 시작
+pub unsafe fn register_hook<F>(cb: F)
+where
+    F: FnMut(u32, u32) + Send + 'static,
+{
+    CALLBACK = Some(Box::new(cb));
+
+    let hmod = GetModuleHandleW(None).expect("GetModuleHandleW failed");
+    HOOK = SetWindowsHookExW(WH_KEYBOARD_LL, Some(low_level_keyboard_proc), hmod, 0)
+        .expect("SetWindowsHookExW failed");
+
+    let mut msg = MSG::default();
+    while GetMessageW(&mut msg, None, 0, 0).into() {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+}
+
+unsafe extern "system" fn low_level_keyboard_proc(
+    n_code: i32,
+    w_param: WPARAM,
+    l_param: LPARAM,
+) -> LRESULT {
+    if n_code == HC_ACTION as i32 {
+        let kb: &KBDLLHOOKSTRUCT = &*(l_param.0 as *const KBDLLHOOKSTRUCT);
+        let msg = w_param.0 as u32;
+
+        if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
+            if let Some(cb) = &mut CALLBACK {
+                cb(kb.vkCode, msg); // ✅ 여기서 콜백 호출
+            }
+        }
+    }
+    CallNextHookEx(HOOK, n_code, w_param, l_param)
+}
+
+pub unsafe fn vk_to_text(vk: u32) -> String {
+    let layout = GetKeyboardLayout(0);
+    let keystate = [0u8; 256];
+    let mut buf = [0u16; 8];
+
+    match vk {
+        0x08 => "Backspace",
+        0x09 => "Tab",
+        0x0D => "Enter",
+        0x13 => "Pause",
+        0x14 => "CapsLock",
+        0x1B => "Esc",
+        0x20 => "Space",
+        0x21 => "PageUp",
+        0x22 => "PageDown",
+        0x23 => "End",
+        0x24 => "Home",
+        0x25 => "←",
+        0x26 => "↑",
+        0x27 => "→",
+        0x28 => "↓",
+        0x2C => "PrintScreen",
+        0x2D => "Insert",
+        0x2E => "Delete",
+        0x90 => "NumLock",
+        0x91 => "ScrollLock",
+
+        // Modifier keys
+        0x10 => "Shift",
+        0xA0 => "Shift",
+        0xA1 => "Shift",
+
+        0x11 => "Ctrl",
+        0xA2 => "LCtrl",
+        0xA3 => "RCtrl",
+
+        0x12 => "Alt",
+        0xA4 => "LAlt",
+        0xA5 => "RAlt",
+
+        0x5B => "LWin",
+        0x5C => "RWin",
+
+        // Menu / Context
+        0x5D => "Apps",
+
+        // 한국어 입력 관련
+        0x15 => "Kana",  // VK_KANA
+        0x19 => "Kanji", // VK_KANJI
+
+        0x70..=0x7B => {
+            let n = vk - 0x6F; // F1..F12
+            return format!("F{n}");
+        }
+        _ => {
+            let rc = ToUnicodeEx(vk, 0, &keystate, &mut buf, 0, layout);
+            if rc > 0 {
+                return String::from_utf16_lossy(&buf[..rc as usize]);
+            } else {
+                return format!("VK_{vk:02X}");
+            }
+        }
+    }
+    .to_string()
+}
