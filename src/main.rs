@@ -2,7 +2,7 @@ mod key_hook;
 mod platform;
 
 use std::{
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex},
     thread,
 };
 
@@ -12,10 +12,10 @@ use raw_window_handle::HasWindowHandle;
 use windows::Win32::UI::WindowsAndMessaging::{WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
 
 struct App {
-    patched_hwnd: OnceLock<isize>,
     pressed_keys: Arc<Mutex<IndexSet<u32>>>,
     last_combination: IndexSet<u32>,
     is_key_cleared: bool,
+    is_overlay: bool,
 }
 
 impl App {
@@ -35,10 +35,10 @@ impl App {
             });
         });
         Self {
-            patched_hwnd: OnceLock::new(),
             pressed_keys,
             last_combination: IndexSet::new(),
             is_key_cleared: false,
+            is_overlay: false,
         }
     }
 }
@@ -145,28 +145,6 @@ impl eframe::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(handle) = frame.window_handle() {
-                // platform::make_click_through_windows(&handle);
-                // eframe이 raw_window_handle을 노출 (PR/이슈에서 합의된 경로)
-                // HWND 뽑기
-                // if let raw_window_handle::RawWindowHandle::Win32(h) = raw {
-                //     let hwnd = h.hwnd.get() as isize;
-                //     // 아직 적용 안 했거나, 핸들이 바뀐 경우 재적용
-                //     let need = self
-                //         .patched_hwnd
-                //         .get()
-                //         .map(|saved| *saved != hwnd)
-                //         .unwrap_or(true);
-                //     if need {
-                //         unsafe { win::make_click_through(hwnd) };
-                //         let _ = self.patched_hwnd.set(hwnd);
-                //     }
-                // }
-            }
-        }
-
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
@@ -180,13 +158,48 @@ impl eframe::App for App {
                         ui.min_rect().height() - TITLE_BAR_HEIGHT,
                     ),
                 );
-                background_ui(ui, remain_rect);
 
-                let title_rect = egui::Rect::from_min_size(
-                    ui.min_rect().min,
-                    egui::vec2(ui.min_rect().width(), TITLE_BAR_HEIGHT),
-                );
-                title_bar_ui(ui, title_rect, "Key Display", true);
+                if !self.is_overlay {
+                    background_ui(ui, remain_rect);
+
+                    let title_rect = egui::Rect::from_min_size(
+                        ui.min_rect().min,
+                        egui::vec2(ui.min_rect().width(), TITLE_BAR_HEIGHT),
+                    );
+                    title_bar_ui(ui, title_rect, "Key Display", true);
+
+                    let title_control_rect = egui::Rect::from_min_size(
+                        egui::pos2(
+                            remain_rect.left() + 1.0,
+                            remain_rect.bottom() - TITLE_BAR_HEIGHT,
+                        ),
+                        egui::vec2(remain_rect.width() - 2.0, TITLE_BAR_HEIGHT),
+                    );
+
+                    egui::Area::new(egui::Id::new("title_control"))
+                        .fixed_pos(title_control_rect.min)
+                        .default_size(title_control_rect.size())
+                        .show(ui.ctx(), |ui| {
+                            ui.allocate_ui_with_layout(
+                                title_control_rect.size(),
+                                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                                |ui| {
+                                    if ui.button("Overlay").clicked() {
+                                        self.is_overlay = !self.is_overlay;
+
+                                        #[cfg(target_os = "windows")]
+                                        if let Ok(handle) = frame.window_handle() {
+                                            if self.is_overlay {
+                                                platform::enable_click_through_windows(&handle);
+                                            } else {
+                                                platform::disable_click_through_windows(&handle);
+                                            }
+                                        }
+                                    }
+                                },
+                            );
+                        });
+                }
 
                 let area_rect = egui::Rect::from_min_size(
                     egui::pos2(
@@ -198,6 +211,7 @@ impl eframe::App for App {
                         remain_rect.height() - TITLE_SIDE_PADDING * 2.0,
                     ),
                 );
+
                 egui::Area::new(egui::Id::new("root_area"))
                     .fixed_pos(area_rect.min)
                     .default_size(area_rect.size())
@@ -219,7 +233,7 @@ impl eframe::App for App {
                         if !self.last_combination.is_empty() {
                             let pressed_str =
                                 key_hook::key_combination_to_string(&mut self.last_combination);
-                            ui.label(pressed_str);
+                            ui.label(egui::RichText::new(pressed_str).heading().size(56.0));
                         } else {
                             ui.label("Press any key...");
                         }
