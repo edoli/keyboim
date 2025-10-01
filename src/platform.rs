@@ -1,11 +1,7 @@
 #[cfg(target_os = "windows")]
-pub fn make_click_through_windows(window_handle: &raw_window_handle::WindowHandle) {
-    use raw_window_handle::HasWindowHandle;
-    use windows::Win32::Foundation::COLORREF;
+pub fn enable_click_through_windows(window_handle: &raw_window_handle::WindowHandle) {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::*;
-    use winit::platform::windows::WindowExtWindows;
-    use winit::platform::windows::*;
 
     unsafe {
         use raw_window_handle::RawWindowHandle;
@@ -21,6 +17,28 @@ pub fn make_click_through_windows(window_handle: &raw_window_handle::WindowHandl
             hwnd,
             GWL_EXSTYLE,
             ex | WS_EX_LAYERED.0 as i32 | WS_EX_TRANSPARENT.0 as i32,
+        );
+    }
+}
+
+pub fn disable_click_through_windows(window_handle: &raw_window_handle::WindowHandle) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::*;
+
+    unsafe {
+        use raw_window_handle::RawWindowHandle;
+
+        let hwnd_v = match window_handle.as_raw() {
+            RawWindowHandle::Win32(handle) => handle.hwnd.get(),
+            _ => panic!("not running on Windows"),
+        };
+        let hwnd = HWND(hwnd_v as *mut _);
+        let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        // 레이어드 + 클릭 스루 해제
+        SetWindowLongW(
+            hwnd,
+            GWL_EXSTYLE,
+            ex & !(WS_EX_LAYERED.0 as i32) & !(WS_EX_TRANSPARENT.0 as i32),
         );
     }
 }

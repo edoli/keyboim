@@ -6,10 +6,7 @@ use std::{
     thread,
 };
 
-use eframe::{
-    egui,
-    egui::{Color32, Rgba},
-};
+use eframe::{egui, egui::Rgba};
 use raw_window_handle::HasWindowHandle;
 
 struct App {
@@ -163,9 +160,8 @@ impl eframe::App for App {
             }
         }
 
-        // CentralPanel의 프레임/배경을 끕니다
         egui::CentralPanel::default()
-            .frame(egui::Frame::none()) // <- 배경 채우지 않기
+            .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
                 let remain_rect = egui::Rect::from_min_size(
                     egui::pos2(
@@ -214,11 +210,10 @@ impl eframe::App for App {
 }
 
 fn main() -> eframe::Result<()> {
-    // 장식 제거 + 투명 창
     let viewport = egui::ViewportBuilder::default()
         .with_always_on_top()
         .with_decorations(false)
-        .with_transparent(true); // OS가 지원하면 진짜 투명
+        .with_transparent(true);
 
     let options = eframe::NativeOptions {
         viewport,
