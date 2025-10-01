@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod key_hook;
 mod platform;
 
@@ -157,7 +159,7 @@ impl eframe::App for App {
                         ui.min_rect().min,
                         egui::vec2(ui.min_rect().width(), TITLE_BAR_HEIGHT),
                     );
-                    title_bar_ui(ui, title_rect, "Key Display", true);
+                    title_bar_ui(ui, title_rect, "Keyboim", true);
                 }
 
                 let area_rect = egui::Rect::from_min_size(
