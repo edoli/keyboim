@@ -13,6 +13,8 @@ use indexmap::IndexSet;
 use raw_window_handle::HasWindowHandle;
 use windows::Win32::UI::WindowsAndMessaging::{WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
 
+use crate::key_hook::is_disable_overlay_key_pressed;
+
 struct App {
     pressed_keys: Arc<Mutex<IndexSet<u32>>>,
     last_combination: IndexSet<u32>,
@@ -187,6 +189,15 @@ impl eframe::App for App {
                                 {
                                     self.last_combination = pressed_keys.clone();
                                     self.last_update = std::time::Instant::now();
+
+                                    if is_disable_overlay_key_pressed(&pressed_keys) {
+                                        self.is_overlay = false;
+
+                                        #[cfg(target_os = "windows")]
+                                        if let Ok(handle) = frame.window_handle() {
+                                            platform::disable_click_through_windows(&handle);
+                                        }
+                                    }
                                 }
 
                                 self.is_key_cleared = false;
@@ -225,15 +236,11 @@ impl eframe::App for App {
                                 egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                                 |ui| {
                                     if ui.button("Overlay").clicked() {
-                                        self.is_overlay = !self.is_overlay;
+                                        self.is_overlay = true;
 
                                         #[cfg(target_os = "windows")]
                                         if let Ok(handle) = frame.window_handle() {
-                                            if self.is_overlay {
-                                                platform::enable_click_through_windows(&handle);
-                                            } else {
-                                                platform::disable_click_through_windows(&handle);
-                                            }
+                                            platform::enable_click_through_windows(&handle);
                                         }
                                     }
                                 },

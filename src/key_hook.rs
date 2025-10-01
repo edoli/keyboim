@@ -135,3 +135,16 @@ pub fn key_combination_to_string(keys: &mut IndexSet<u32>) -> String {
             .join(" + ")
     }
 }
+
+pub fn is_disable_overlay_key_pressed(pressed_keys: &IndexSet<u32>) -> bool {
+    if pressed_keys.contains(&(VK_LCONTROL.0 as u32))
+        && pressed_keys.contains(&(VK_LSHIFT.0 as u32))
+        && pressed_keys.contains(&(VK_LMENU.0 as u32))
+        && pressed_keys.contains(&(VK_Q.0 as u32))
+        && pressed_keys.contains(&(VK_E.0 as u32))
+    {
+        true
+    } else {
+        false
+    }
+}
