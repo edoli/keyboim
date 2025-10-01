@@ -265,9 +265,5 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
-    eframe::run_native(
-        "Transparent Window",
-        options,
-        Box::new(|_cc| Ok(Box::new(App::new()))),
-    )
+    eframe::run_native("Keyboim", options, Box::new(|_cc| Ok(Box::new(App::new()))))
 }
