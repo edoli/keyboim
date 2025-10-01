@@ -13,9 +13,8 @@ use windows::Win32::{
 };
 
 static mut HOOK: HHOOK = HHOOK(null_mut());
-static mut CALLBACK: Option<Box<dyn FnMut(u32, u32) + Send>> = None; // ✅ 사용자 콜백 저장
+static mut CALLBACK: Option<Box<dyn FnMut(u32, u32) + Send>> = None;
 
-/// ✅ 사용자 콜백을 등록하고 후킹 시작
 pub unsafe fn register_hook<F>(cb: F)
 where
     F: FnMut(u32, u32) + Send + 'static,
@@ -28,7 +27,9 @@ where
 
     let mut msg = MSG::default();
     while GetMessageW(&mut msg, None, 0, 0).into() {
-        TranslateMessage(&msg);
+        if TranslateMessage(&msg).0 > 0 {
+            break;
+        }
         DispatchMessageW(&msg);
     }
 }
@@ -42,6 +43,7 @@ unsafe extern "system" fn low_level_keyboard_proc(
         let kb: &KBDLLHOOKSTRUCT = &*(l_param.0 as *const KBDLLHOOKSTRUCT);
         let msg = w_param.0 as u32;
 
+        #[allow(static_mut_refs)]
         if let Some(cb) = &mut CALLBACK {
             cb(kb.vkCode, msg);
         }
@@ -92,10 +94,8 @@ pub unsafe fn vk_to_text(vk: u32) -> String {
         0x5B => "Win", // Left Windows
         0x5C => "Win", // Right Windows
 
-        // Menu / Context
         0x5D => "Apps",
 
-        // 한국어 입력 관련
         0x15 => "Kana",  // VK_KANA
         0x19 => "Kanji", // VK_KANJI
 

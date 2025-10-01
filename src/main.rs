@@ -51,19 +51,16 @@ const TITLE_SIDE_PADDING: f32 = 10.0;
 fn title_bar_ui(ui: &mut egui::Ui, title_bar_rect: egui::Rect, title: &str, is_focused: bool) {
     use egui::{Id, PointerButton, Sense};
 
-    // 타이틀 바 영역을 인터랙션 대상으로 등록
     let bar_resp = ui.interact(
         title_bar_rect,
         Id::new("title_bar"),
         Sense::click_and_drag(),
     );
 
-    // 2) 배경 그리기
     let p = ui.painter_at(title_bar_rect);
     let visuals = ui.visuals();
 
     let (fill, stroke) = if bar_resp.is_pointer_button_down_on() {
-        // pressed 상태일 때 조금 진하게
         (
             visuals.widgets.active.bg_fill,
             visuals.widgets.active.bg_stroke,
@@ -74,7 +71,6 @@ fn title_bar_ui(ui: &mut egui::Ui, title_bar_rect: egui::Rect, title: &str, is_f
             visuals.widgets.hovered.bg_stroke,
         )
     } else {
-        // 포커스 여부로 기본색 약간 다르게
         let base = visuals.window_fill();
         let fill = if is_focused {
             base
@@ -98,7 +94,6 @@ fn title_bar_ui(ui: &mut egui::Ui, title_bar_rect: egui::Rect, title: &str, is_f
         egui::StrokeKind::Inside,
     );
 
-    // 3) 제목 텍스트
     let title_pos = egui::pos2(
         title_bar_rect.left() + TITLE_SIDE_PADDING,
         title_bar_rect.center().y,
@@ -111,14 +106,9 @@ fn title_bar_ui(ui: &mut egui::Ui, title_bar_rect: egui::Rect, title: &str, is_f
         visuals.text_color(),
     );
 
-    if bar_resp.is_pointer_button_down_on() {
-        // ← "pressed" 상태
-    }
     if bar_resp.drag_started_by(PointerButton::Primary) {
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
     }
-
-    // 텍스트/라인/버튼 등 그리기 …
 }
 
 fn background_ui(ui: &mut egui::Ui, rect: egui::Rect) {
@@ -141,7 +131,6 @@ fn background_ui(ui: &mut egui::Ui, rect: egui::Rect) {
 }
 
 impl eframe::App for App {
-    // 창 배경을 완전 투명으로
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         Rgba::TRANSPARENT.to_array()
     }

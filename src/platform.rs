@@ -12,7 +12,7 @@ pub fn enable_click_through_windows(window_handle: &raw_window_handle::WindowHan
         };
         let hwnd = HWND(hwnd_v as *mut _);
         let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
-        // 레이어드 + 클릭 스루
+        
         SetWindowLongW(
             hwnd,
             GWL_EXSTYLE,
@@ -34,7 +34,7 @@ pub fn disable_click_through_windows(window_handle: &raw_window_handle::WindowHa
         };
         let hwnd = HWND(hwnd_v as *mut _);
         let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
-        // 레이어드 + 클릭 스루 해제
+
         SetWindowLongW(
             hwnd,
             GWL_EXSTYLE,
