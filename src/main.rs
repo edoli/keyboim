@@ -7,31 +7,38 @@ use std::{
 };
 
 use eframe::{egui, egui::Rgba};
+use indexmap::IndexSet;
 use raw_window_handle::HasWindowHandle;
+use windows::Win32::UI::WindowsAndMessaging::{WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
 
 struct App {
     patched_hwnd: OnceLock<isize>,
-    current_key: Arc<Mutex<Option<String>>>,
+    pressed_keys: Arc<Mutex<IndexSet<u32>>>,
+    last_combination: IndexSet<u32>,
+    is_key_cleared: bool,
 }
 
 impl App {
     fn new() -> Self {
-        let key_state = Arc::new(Mutex::new(None));
-        let key_state_clone = key_state.clone();
+        let pressed_keys = Arc::new(Mutex::new(IndexSet::new()));
+        let pressed_keys_clone = pressed_keys.clone();
 
         thread::spawn(move || unsafe {
             key_hook::register_hook(move |vk, msg| {
-                if msg == 256 || msg == 260 {
-                    let text = key_hook::vk_to_text(vk);
-
-                    let mut lock = key_state_clone.lock().unwrap();
-                    *lock = Some(text);
+                if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
+                    let mut lock = pressed_keys_clone.lock().unwrap();
+                    lock.insert(vk);
+                } else if msg == WM_KEYUP || msg == WM_SYSKEYUP {
+                    let mut lock = pressed_keys_clone.lock().unwrap();
+                    lock.swap_remove(&vk);
                 }
             });
         });
         Self {
             patched_hwnd: OnceLock::new(),
-            current_key: key_state,
+            pressed_keys,
+            last_combination: IndexSet::new(),
+            is_key_cleared: false,
         }
     }
 }
@@ -195,12 +202,26 @@ impl eframe::App for App {
                     .fixed_pos(area_rect.min)
                     .default_size(area_rect.size())
                     .show(ui.ctx(), |ui| {
-                        if let Ok(lock) = self.current_key.lock() {
-                            if let Some(text) = &*lock {
-                                ui.label(format!("Last Key: {}", text));
+                        ui.allocate_space(egui::vec2(ui.available_width(), 0.0));
+                        if let Ok(pressed_keys) = self.pressed_keys.lock() {
+                            if pressed_keys.is_empty() {
+                                self.is_key_cleared = true;
                             } else {
-                                ui.label("Press any key...");
+                                if pressed_keys.len() > self.last_combination.len()
+                                    || self.is_key_cleared
+                                {
+                                    self.last_combination = pressed_keys.clone();
+                                }
+
+                                self.is_key_cleared = false;
                             }
+                        }
+                        if !self.last_combination.is_empty() {
+                            let pressed_str =
+                                key_hook::key_combination_to_string(&mut self.last_combination);
+                            ui.label(pressed_str);
+                        } else {
+                            ui.label("Press any key...");
                         }
                     });
             });
@@ -223,6 +244,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Transparent Window",
         options,
-        Box::new(|cc| Ok(Box::new(App::new()))),
+        Box::new(|_cc| Ok(Box::new(App::new()))),
     )
 }

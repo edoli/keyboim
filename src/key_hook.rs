@@ -1,12 +1,13 @@
+use indexmap::IndexSet;
 use std::ptr::null_mut;
 use windows::Win32::{
     Foundation::{LPARAM, LRESULT, WPARAM},
     System::LibraryLoader::GetModuleHandleW,
     UI::{
-        Input::KeyboardAndMouse::{GetKeyboardLayout, ToUnicodeEx},
+        Input::KeyboardAndMouse::*,
         WindowsAndMessaging::{
             CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage,
-            HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+            HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
         },
     },
 };
@@ -41,10 +42,8 @@ unsafe extern "system" fn low_level_keyboard_proc(
         let kb: &KBDLLHOOKSTRUCT = &*(l_param.0 as *const KBDLLHOOKSTRUCT);
         let msg = w_param.0 as u32;
 
-        if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
-            if let Some(cb) = &mut CALLBACK {
-                cb(kb.vkCode, msg); // ✅ 여기서 콜백 호출
-            }
+        if let Some(cb) = &mut CALLBACK {
+            cb(kb.vkCode, msg);
         }
     }
     CallNextHookEx(HOOK, n_code, w_param, l_param)
@@ -83,15 +82,15 @@ pub unsafe fn vk_to_text(vk: u32) -> String {
         0xA1 => "Shift",
 
         0x11 => "Ctrl",
-        0xA2 => "LCtrl",
-        0xA3 => "RCtrl",
+        0xA2 => "Ctrl", // Left Ctrl
+        0xA3 => "Ctrl", // Right Ctrl
 
         0x12 => "Alt",
-        0xA4 => "LAlt",
-        0xA5 => "RAlt",
+        0xA4 => "Alt", // Left Alt
+        0xA5 => "Alt", // Right Alt
 
-        0x5B => "LWin",
-        0x5C => "RWin",
+        0x5B => "Win", // Left Windows
+        0x5C => "Win", // Right Windows
 
         // Menu / Context
         0x5D => "Apps",
@@ -107,11 +106,32 @@ pub unsafe fn vk_to_text(vk: u32) -> String {
         _ => {
             let rc = ToUnicodeEx(vk, 0, &keystate, &mut buf, 0, layout);
             if rc > 0 {
-                return String::from_utf16_lossy(&buf[..rc as usize]);
+                return String::from_utf16_lossy(&buf[..rc as usize]).to_uppercase();
             } else {
                 return format!("VK_{vk:02X}");
             }
         }
     }
     .to_string()
+}
+
+pub fn key_combination_to_string(keys: &mut IndexSet<u32>) -> String {
+    let modifier_priority = |vk: u32| -> u16 {
+        match VIRTUAL_KEY(vk as u16) {
+            VK_LCONTROL | VK_RCONTROL => 0, // Ctrl
+            VK_LSHIFT | VK_RSHIFT => 1,     // Shift
+            VK_LMENU | VK_RMENU => 2,       // Alt
+            VK_LWIN | VK_RWIN => 3,         // Meta(Win/Super)
+            _ => 10,
+        }
+    };
+
+    keys.sort_by_key(|&vk| modifier_priority(vk));
+
+    unsafe {
+        keys.iter()
+            .map(|&vk| vk_to_text(vk))
+            .collect::<Vec<_>>()
+            .join(" + ")
+    }
 }

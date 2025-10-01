@@ -1503,6 +1503,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui-winit",
+ "indexmap",
  "raw-window-handle",
  "windows 0.58.0",
  "winit",
