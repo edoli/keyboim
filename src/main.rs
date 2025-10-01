@@ -21,6 +21,7 @@ struct App {
     is_key_cleared: bool,
     is_overlay: bool,
     last_update: std::time::Instant,
+    is_outline: bool,
 }
 
 impl App {
@@ -45,6 +46,7 @@ impl App {
             is_key_cleared: false,
             is_overlay: false,
             last_update: std::time::Instant::now(),
+            is_outline: true,
         }
     }
 }
@@ -134,6 +136,42 @@ fn background_ui(ui: &mut egui::Ui, rect: egui::Rect) {
     );
 }
 
+fn outlined_text(
+    ui: &mut egui::Ui,
+    text: &str,
+    pos: egui::Pos2,
+    font_size: f32,
+    text_color: egui::Color32,
+    outline_color: egui::Color32,
+    outline_thickness: f32,
+) {
+    let font = egui::FontId::proportional(font_size);
+    let diagonal = outline_thickness as f32 * 0.7071;
+    let offsets = [
+        egui::Vec2::new(-outline_thickness, 0.0),
+        egui::Vec2::new(outline_thickness, 0.0),
+        egui::Vec2::new(0.0, -outline_thickness),
+        egui::Vec2::new(0.0, outline_thickness),
+        egui::Vec2::new(-diagonal, -diagonal),
+        egui::Vec2::new(diagonal, -diagonal),
+        egui::Vec2::new(-diagonal, diagonal),
+        egui::Vec2::new(diagonal, diagonal),
+    ];
+
+    for offset in offsets {
+        ui.painter().text(
+            pos + offset,
+            egui::Align2::LEFT_TOP,
+            text,
+            font.clone(),
+            outline_color,
+        );
+    }
+
+    ui.painter()
+        .text(pos, egui::Align2::LEFT_TOP, text, font, text_color);
+}
+
 impl eframe::App for App {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         Rgba::TRANSPARENT.to_array()
@@ -210,29 +248,48 @@ impl eframe::App for App {
                             let alpha = (255.0
                                 * (3.0 - elapsed.as_millis() as f32 / 1000.0).clamp(0.0, 1.0))
                                 as u8;
-                            ui.label(egui::RichText::new(pressed_str).size(56.0).color(
-                                egui::Color32::from_white_alpha(alpha) * ui.visuals().text_color(),
-                            ));
+
+                            if self.is_outline {
+                                outlined_text(
+                                    ui,
+                                    &pressed_str,
+                                    ui.cursor().min,
+                                    56.0,
+                                    egui::Color32::from_white_alpha(alpha)
+                                        * ui.visuals().text_color(),
+                                    egui::Color32::from_black_alpha(alpha / 4),
+                                    2.0,
+                                );
+                            } else {
+                                ui.label(egui::RichText::new(pressed_str).size(56.0).color(
+                                    egui::Color32::from_white_alpha(alpha)
+                                        * ui.visuals().text_color(),
+                                ));
+                            }
                         } else {
                             ui.label("");
                         }
                     });
 
                 if !self.is_overlay {
-                    let title_control_rect = egui::Rect::from_min_size(
+                    let control_height = TITLE_BAR_HEIGHT
+                        + ui.style().spacing.interact_size.y
+                        + ui.style().spacing.item_spacing.y;
+                    let control_rect = egui::Rect::from_min_size(
                         egui::pos2(
                             remain_rect.left() + 1.0,
-                            remain_rect.bottom() - TITLE_BAR_HEIGHT,
+                            remain_rect.bottom() - control_height,
                         ),
-                        egui::vec2(remain_rect.width() - 2.0, TITLE_BAR_HEIGHT),
+                        egui::vec2(remain_rect.width() - 2.0, control_height),
                     );
 
-                    egui::Area::new(egui::Id::new("title_control"))
-                        .fixed_pos(title_control_rect.min)
-                        .default_size(title_control_rect.size())
+                    egui::Area::new(egui::Id::new("control"))
+                        .fixed_pos(control_rect.min)
+                        .default_size(control_rect.size())
                         .show(ui.ctx(), |ui| {
+                            ui.checkbox(&mut self.is_outline, "Outline Text");
                             ui.allocate_ui_with_layout(
-                                title_control_rect.size(),
+                                egui::vec2(control_rect.width(), TITLE_BAR_HEIGHT),
                                 egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                                 |ui| {
                                     if ui.button("Overlay").clicked() {
