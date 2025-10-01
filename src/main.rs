@@ -16,6 +16,7 @@ struct App {
     last_combination: IndexSet<u32>,
     is_key_cleared: bool,
     is_overlay: bool,
+    last_update: std::time::Instant,
 }
 
 impl App {
@@ -39,6 +40,7 @@ impl App {
             last_combination: IndexSet::new(),
             is_key_cleared: false,
             is_overlay: false,
+            last_update: std::time::Instant::now(),
         }
     }
 }
@@ -167,7 +169,54 @@ impl eframe::App for App {
                         egui::vec2(ui.min_rect().width(), TITLE_BAR_HEIGHT),
                     );
                     title_bar_ui(ui, title_rect, "Key Display", true);
+                }
 
+                let area_rect = egui::Rect::from_min_size(
+                    egui::pos2(
+                        remain_rect.min.x + TITLE_SIDE_PADDING,
+                        remain_rect.min.y + TITLE_SIDE_PADDING,
+                    ),
+                    egui::vec2(
+                        remain_rect.width() - TITLE_SIDE_PADDING * 2.0,
+                        remain_rect.height() - TITLE_SIDE_PADDING * 2.0,
+                    ),
+                );
+
+                egui::Area::new(egui::Id::new("root_area"))
+                    .fixed_pos(area_rect.min)
+                    .default_size(area_rect.size())
+                    .show(ui.ctx(), |ui| {
+                        ui.allocate_space(egui::vec2(ui.available_width(), 0.0));
+                        if let Ok(pressed_keys) = self.pressed_keys.lock() {
+                            if pressed_keys.is_empty() {
+                                self.is_key_cleared = true;
+                            } else {
+                                if pressed_keys.len() > self.last_combination.len()
+                                    || self.is_key_cleared
+                                {
+                                    self.last_combination = pressed_keys.clone();
+                                    self.last_update = std::time::Instant::now();
+                                }
+
+                                self.is_key_cleared = false;
+                            }
+                        }
+                        if !self.last_combination.is_empty() {
+                            let pressed_str =
+                                key_hook::key_combination_to_string(&mut self.last_combination);
+                            let elapsed = self.last_update.elapsed();
+                            let alpha = (255.0
+                                * (3.0 - elapsed.as_millis() as f32 / 1000.0).clamp(0.0, 1.0))
+                                as u8;
+                            ui.label(egui::RichText::new(pressed_str).size(56.0).color(
+                                egui::Color32::from_white_alpha(alpha) * ui.visuals().text_color(),
+                            ));
+                        } else {
+                            ui.label("");
+                        }
+                    });
+
+                if !self.is_overlay {
                     let title_control_rect = egui::Rect::from_min_size(
                         egui::pos2(
                             remain_rect.left() + 1.0,
@@ -200,44 +249,6 @@ impl eframe::App for App {
                             );
                         });
                 }
-
-                let area_rect = egui::Rect::from_min_size(
-                    egui::pos2(
-                        remain_rect.min.x + TITLE_SIDE_PADDING,
-                        remain_rect.min.y + TITLE_SIDE_PADDING,
-                    ),
-                    egui::vec2(
-                        remain_rect.width() - TITLE_SIDE_PADDING * 2.0,
-                        remain_rect.height() - TITLE_SIDE_PADDING * 2.0,
-                    ),
-                );
-
-                egui::Area::new(egui::Id::new("root_area"))
-                    .fixed_pos(area_rect.min)
-                    .default_size(area_rect.size())
-                    .show(ui.ctx(), |ui| {
-                        ui.allocate_space(egui::vec2(ui.available_width(), 0.0));
-                        if let Ok(pressed_keys) = self.pressed_keys.lock() {
-                            if pressed_keys.is_empty() {
-                                self.is_key_cleared = true;
-                            } else {
-                                if pressed_keys.len() > self.last_combination.len()
-                                    || self.is_key_cleared
-                                {
-                                    self.last_combination = pressed_keys.clone();
-                                }
-
-                                self.is_key_cleared = false;
-                            }
-                        }
-                        if !self.last_combination.is_empty() {
-                            let pressed_str =
-                                key_hook::key_combination_to_string(&mut self.last_combination);
-                            ui.label(egui::RichText::new(pressed_str).heading().size(56.0));
-                        } else {
-                            ui.label("Press any key...");
-                        }
-                    });
             });
 
         ctx.request_repaint();
@@ -248,7 +259,8 @@ fn main() -> eframe::Result<()> {
     let viewport = egui::ViewportBuilder::default()
         .with_always_on_top()
         .with_decorations(false)
-        .with_transparent(true);
+        .with_transparent(true)
+        .with_inner_size(egui::vec2(640.0, 160.0));
 
     let options = eframe::NativeOptions {
         viewport,

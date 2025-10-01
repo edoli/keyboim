@@ -15,5 +15,5 @@ windows = { version = "0.58", features = [
 winit = { version = "0.30" }
 egui = "0.32"
 egui-winit = "0.32"
-eframe = "0.32"
+eframe = { version = "0.32", features = ["glow"] }
 indexmap = "2.11.4"
