@@ -253,8 +253,17 @@ impl eframe::App for App {
     }
 }
 
+const ICON_DATA: &[u8] = include_bytes!("icon.bin");
+
 fn main() -> eframe::Result<()> {
+    let icon = egui::IconData {
+        rgba: ICON_DATA.to_vec(),
+        width: 512,
+        height: 512,
+    };
+
     let viewport = egui::ViewportBuilder::default()
+        .with_icon(icon)
         .with_always_on_top()
         .with_decorations(false)
         .with_transparent(true)

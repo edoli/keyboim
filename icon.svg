@@ -1,0 +1,55 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Key Overlay App Icon</title>
+  <desc id="desc">Rounded square with a keycap and a live overlay badge indicating global keystroke display</desc>
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5b9cff"/>
+      <stop offset="100%" stop-color="#2a62ff"/>
+    </linearGradient>
+
+    <!-- Soft inner shadow for the keycap -->
+    <filter id="softShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#0b1b4f" flood-opacity="0.25"/>
+    </filter>
+
+    <!-- Subtle top highlight on the keycap -->
+    <linearGradient id="capGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#e8ecf4" stop-opacity="1"/>
+    </linearGradient>
+
+    <!-- Overlay badge glow -->
+    <filter id="badgeGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Monospace-like label on the keycap -->
+    <style>
+      .label { font: 700 192px/1 "Segoe UI", system-ui, -apple-system, Roboto, "Noto Sans", "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    </style>
+  </defs>
+
+  <!-- Live overlay badge (top-right) -->
+  <g transform="translate(256,256) scale(7)">
+    <!-- Badge base -->
+    <circle cx="0" cy="0" r="36" fill="#00623cff"/>
+    <!-- Eye/indicator to suggest "on-screen display" -->
+    <g transform="scale(1.4)">
+    
+      <path d="M0 -12c-14 0-24 12-24 12s10 12 24 12 24-12 24-12-10-12-24-12zm0 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12z" fill="#1b3d32ff"/>
+    </g>
+  </g>
+
+  <!-- Keycap (main symbol) -->
+  <g filter="url(#softShadow)">
+
+    <!-- Key legend: "K" for key + tiny dots to imply multiple keys -->
+    <text x="80" y="322" class="label" fill="#b3bcdaff" font-size="2em">KEY</text>
+  </g>
+
+</svg>
