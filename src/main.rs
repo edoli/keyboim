@@ -54,7 +54,7 @@ impl App {
 const TITLE_BAR_HEIGHT: f32 = 32.0;
 const TITLE_SIDE_PADDING: f32 = 10.0;
 
-fn title_bar_ui(ui: &mut egui::Ui, title_bar_rect: egui::Rect, title: &str, is_focused: bool) {
+fn title_bar_ui(ui: &mut egui::Ui, title_bar_rect: egui::Rect, title: &str) {
     use egui::{Id, PointerButton, Sense};
 
     let bar_resp = ui.interact(
@@ -66,25 +66,8 @@ fn title_bar_ui(ui: &mut egui::Ui, title_bar_rect: egui::Rect, title: &str, is_f
     let p = ui.painter_at(title_bar_rect);
     let visuals = ui.visuals();
 
-    let (fill, stroke) = if bar_resp.is_pointer_button_down_on() {
-        (
-            visuals.widgets.active.bg_fill,
-            visuals.widgets.active.bg_stroke,
-        )
-    } else if bar_resp.hovered() {
-        (
-            visuals.widgets.hovered.bg_fill,
-            visuals.widgets.hovered.bg_stroke,
-        )
-    } else {
-        let base = visuals.window_fill();
-        let fill = if is_focused {
-            base
-        } else {
-            base.gamma_multiply(0.95)
-        };
-        (fill, visuals.window_stroke())
-    };
+    let fill = visuals.window_fill();
+    let stroke = visuals.window_stroke();
 
     let corner_radius = egui::CornerRadius {
         nw: 4,
@@ -192,14 +175,14 @@ impl eframe::App for App {
                     ),
                 );
 
+                let title_rect = egui::Rect::from_min_size(
+                    ui.min_rect().min,
+                    egui::vec2(ui.min_rect().width(), TITLE_BAR_HEIGHT),
+                );
+
                 if !self.is_overlay {
                     background_ui(ui, remain_rect);
-
-                    let title_rect = egui::Rect::from_min_size(
-                        ui.min_rect().min,
-                        egui::vec2(ui.min_rect().width(), TITLE_BAR_HEIGHT),
-                    );
-                    title_bar_ui(ui, title_rect, "Keyboim", true);
+                    title_bar_ui(ui, title_rect, "Keyboim");
                 }
 
                 let area_rect = egui::Rect::from_min_size(
@@ -272,36 +255,57 @@ impl eframe::App for App {
                     });
 
                 if !self.is_overlay {
-                    let control_height = TITLE_BAR_HEIGHT
-                        + ui.style().spacing.interact_size.y
-                        + ui.style().spacing.item_spacing.y;
+                    let control_height = ui.style().spacing.interact_size.y;
                     let control_rect = egui::Rect::from_min_size(
                         egui::pos2(
-                            remain_rect.left() + 1.0,
-                            remain_rect.bottom() - control_height,
+                            title_rect.left() + 100.0,
+                            title_rect.top() + (TITLE_BAR_HEIGHT - control_height) / 2.0,
                         ),
-                        egui::vec2(remain_rect.width() - 2.0, control_height),
+                        egui::vec2(title_rect.width() - 200.0, control_height),
                     );
 
                     egui::Area::new(egui::Id::new("control"))
                         .fixed_pos(control_rect.min)
                         .default_size(control_rect.size())
                         .show(ui.ctx(), |ui| {
-                            ui.checkbox(&mut self.is_outline, "Outline Text");
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(control_rect.width(), TITLE_BAR_HEIGHT),
-                                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-                                |ui| {
-                                    if ui.button("Overlay").clicked() {
-                                        self.is_overlay = true;
+                            ui.horizontal(|ui| {
+                                ui.checkbox(&mut self.is_outline, "Outline Text");
+                                if ui.button("Overlay").clicked() {
+                                    self.is_overlay = true;
 
-                                        #[cfg(target_os = "windows")]
-                                        if let Ok(handle) = frame.window_handle() {
-                                            platform::enable_click_through_windows(&handle);
-                                        }
+                                    #[cfg(target_os = "windows")]
+                                    if let Ok(handle) = frame.window_handle() {
+                                        platform::enable_click_through_windows(&handle);
                                     }
-                                },
-                            );
+                                }
+                            });
+                        });
+
+                    let title_action_rect = egui::Rect::from_min_size(
+                        egui::pos2(
+                            title_rect.right() - 28.0,
+                            title_rect.top() + (TITLE_BAR_HEIGHT - control_height) / 2.0,
+                        ),
+                        egui::vec2(28.0, control_height),
+                    );
+
+                    egui::Area::new(egui::Id::new("title_action"))
+                        .fixed_pos(title_action_rect.min)
+                        .default_size(title_action_rect.size())
+                        .show(ui.ctx(), |ui| {
+                            ui.horizontal(|ui| {
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(control_height, control_height),
+                                    egui::Layout::centered_and_justified(
+                                        egui::Direction::LeftToRight,
+                                    ),
+                                    |ui| {
+                                        if ui.button("×").clicked() {
+                                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                        }
+                                    },
+                                );
+                            });
                         });
                 }
             });
