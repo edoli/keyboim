@@ -7,13 +7,16 @@ use windows::Win32::{
         Input::KeyboardAndMouse::*,
         WindowsAndMessaging::{
             CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage,
-            HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
+            HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, MSG, MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL,
         },
     },
 };
 
 static mut HOOK: HHOOK = HHOOK(null_mut());
 static mut CALLBACK: Option<Box<dyn FnMut(u32, u32) + Send>> = None;
+
+static mut MOUSE_HOOK: HHOOK = HHOOK(null_mut());
+static mut MOUSE_CALLBACK: Option<Box<dyn FnMut(u32, i32, i32, u32) + Send>> = None;
 
 pub unsafe fn register_hook<F>(cb: F)
 where
@@ -24,6 +27,25 @@ where
     let hmod = GetModuleHandleW(None).expect("GetModuleHandleW failed");
     HOOK = SetWindowsHookExW(WH_KEYBOARD_LL, Some(low_level_keyboard_proc), hmod, 0)
         .expect("SetWindowsHookExW failed");
+
+    let mut msg = MSG::default();
+    while GetMessageW(&mut msg, None, 0, 0).into() {
+        if TranslateMessage(&msg).0 > 0 {
+            break;
+        }
+        DispatchMessageW(&msg);
+    }
+}
+
+pub unsafe fn register_mouse_hook<F>(cb: F)
+where
+    F: FnMut(u32, i32, i32, u32) + Send + 'static,
+{
+    MOUSE_CALLBACK = Some(Box::new(cb));
+
+    let hmod = GetModuleHandleW(None).expect("GetModuleHandleW failed (mouse)");
+    MOUSE_HOOK = SetWindowsHookExW(WH_MOUSE_LL, Some(low_level_mouse_proc), hmod, 0)
+        .expect("SetWindowsHookExW failed (mouse)");
 
     let mut msg = MSG::default();
     while GetMessageW(&mut msg, None, 0, 0).into() {
@@ -51,6 +73,21 @@ unsafe extern "system" fn low_level_keyboard_proc(
     CallNextHookEx(HOOK, n_code, w_param, l_param)
 }
 
+unsafe extern "system" fn low_level_mouse_proc(
+    n_code: i32,
+    w_param: WPARAM,
+    l_param: LPARAM,
+) -> LRESULT {
+    if n_code == HC_ACTION as i32 {
+        let ms: &MSLLHOOKSTRUCT = &*(l_param.0 as *const MSLLHOOKSTRUCT);
+        #[allow(static_mut_refs)]
+        if let Some(cb) = &mut MOUSE_CALLBACK {
+            cb(w_param.0 as u32, ms.pt.x, ms.pt.y, ms.mouseData);
+        }
+    }
+    CallNextHookEx(MOUSE_HOOK, n_code, w_param, l_param)
+}
+
 pub unsafe fn vk_to_text(vk: u32) -> String {
     let layout = GetKeyboardLayout(0);
     let keystate = [0u8; 256];
@@ -68,10 +105,10 @@ pub unsafe fn vk_to_text(vk: u32) -> String {
         0x22 => "PageDown",
         0x23 => "End",
         0x24 => "Home",
-        0x25 => "←",
-        0x26 => "↑",
-        0x27 => "→",
-        0x28 => "↓",
+        0x25 => "⬅",
+        0x26 => "⬆",
+        0x27 => "➡",
+        0x28 => "⬇",
         0x2C => "PrintScreen",
         0x2D => "Insert",
         0x2E => "Delete",

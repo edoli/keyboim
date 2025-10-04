@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod key_hook;
+mod mouse;
 mod platform;
 
 use std::{
@@ -13,14 +14,16 @@ use indexmap::IndexSet;
 use raw_window_handle::HasWindowHandle;
 use windows::Win32::UI::WindowsAndMessaging::{WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
 
-use crate::key_hook::is_disable_overlay_key_pressed;
+use crate::{key_hook::is_disable_overlay_key_pressed, mouse::draw_mouse};
 
 struct App {
     pressed_keys: Arc<Mutex<IndexSet<u32>>>,
+    mouse_buttons: Arc<Mutex<[bool; 5]>>,
     last_combination: IndexSet<u32>,
     is_key_cleared: bool,
     is_overlay: bool,
     last_update: std::time::Instant,
+    is_show_mouse: bool,
     is_outline: bool,
 }
 
@@ -28,6 +31,8 @@ impl App {
     fn new() -> Self {
         let pressed_keys = Arc::new(Mutex::new(IndexSet::new()));
         let pressed_keys_clone = pressed_keys.clone();
+        let mouse_buttons: Arc<Mutex<[bool; 5]>> = Arc::new(Mutex::new([false; 5]));
+        let mouse_buttons_clone = mouse_buttons.clone();
 
         thread::spawn(move || unsafe {
             key_hook::register_hook(move |vk, msg| {
@@ -40,13 +45,47 @@ impl App {
                 }
             });
         });
+        // Mouse hook thread
+        thread::spawn(move || unsafe {
+            use windows::Win32::UI::WindowsAndMessaging::*;
+            key_hook::register_mouse_hook(move |msg, _x, _y, data| {
+                let mut state = mouse_buttons_clone.lock().unwrap();
+                match msg {
+                    WM_LBUTTONDOWN => state[0] = true,
+                    WM_LBUTTONUP => state[0] = false,
+                    WM_RBUTTONDOWN => state[1] = true,
+                    WM_RBUTTONUP => state[1] = false,
+                    WM_MBUTTONDOWN => state[2] = true,
+                    WM_MBUTTONUP => state[2] = false,
+                    WM_XBUTTONDOWN => {
+                        let which = (data >> 16) & 0xFFFF;
+                        if which == 1 {
+                            state[3] = true;
+                        } else if which == 2 {
+                            state[4] = true;
+                        }
+                    }
+                    WM_XBUTTONUP => {
+                        let which = (data >> 16) & 0xFFFF;
+                        if which == 1 {
+                            state[3] = false;
+                        } else if which == 2 {
+                            state[4] = false;
+                        }
+                    }
+                    _ => {}
+                }
+            });
+        });
         Self {
             pressed_keys,
             last_combination: IndexSet::new(),
             is_key_cleared: false,
             is_overlay: false,
             last_update: std::time::Instant::now(),
+            is_show_mouse: true,
             is_outline: true,
+            mouse_buttons,
         }
     }
 }
@@ -201,57 +240,64 @@ impl eframe::App for App {
                     .default_size(area_rect.size())
                     .show(ui.ctx(), |ui| {
                         ui.allocate_space(egui::vec2(ui.available_width(), 0.0));
-                        if let Ok(pressed_keys) = self.pressed_keys.lock() {
-                            if pressed_keys.is_empty() {
-                                self.is_key_cleared = true;
-                            } else {
-                                if pressed_keys.len() > self.last_combination.len()
-                                    || self.is_key_cleared
-                                {
-                                    self.last_combination = pressed_keys.clone();
-                                    self.last_update = std::time::Instant::now();
+                        ui.horizontal(|ui| {
+                            if self.is_show_mouse {
+                                if let Ok(mouse_buttons) = self.mouse_buttons.lock() {
+                                    draw_mouse(ui, &*mouse_buttons);
+                                }
+                            }
+                            if let Ok(pressed_keys) = self.pressed_keys.lock() {
+                                if pressed_keys.is_empty() {
+                                    self.is_key_cleared = true;
+                                } else {
+                                    if pressed_keys.len() > self.last_combination.len()
+                                        || self.is_key_cleared
+                                    {
+                                        self.last_combination = pressed_keys.clone();
+                                        self.last_update = std::time::Instant::now();
 
-                                    if is_disable_overlay_key_pressed(&pressed_keys) {
-                                        self.is_overlay = false;
+                                        if is_disable_overlay_key_pressed(&pressed_keys) {
+                                            self.is_overlay = false;
 
-                                        #[cfg(target_os = "windows")]
-                                        if let Ok(handle) = frame.window_handle() {
-                                            platform::disable_click_through_windows(&handle);
+                                            #[cfg(target_os = "windows")]
+                                            if let Ok(handle) = frame.window_handle() {
+                                                platform::disable_click_through_windows(&handle);
+                                            }
                                         }
                                     }
+
+                                    self.is_key_cleared = false;
                                 }
-
-                                self.is_key_cleared = false;
                             }
-                        }
-                        if !self.last_combination.is_empty() {
-                            let pressed_str =
-                                key_hook::key_combination_to_string(&mut self.last_combination);
-                            let elapsed = self.last_update.elapsed();
-                            let alpha = (255.0
-                                * (3.0 - elapsed.as_millis() as f32 / 1000.0).clamp(0.0, 1.0))
-                                as u8;
+                            if !self.last_combination.is_empty() {
+                                let pressed_str =
+                                    key_hook::key_combination_to_string(&mut self.last_combination);
+                                let elapsed = self.last_update.elapsed();
+                                let alpha = (255.0
+                                    * (3.0 - elapsed.as_millis() as f32 / 1000.0).clamp(0.0, 1.0))
+                                    as u8;
 
-                            if self.is_outline {
-                                outlined_text(
-                                    ui,
-                                    &pressed_str,
-                                    ui.cursor().min,
-                                    56.0,
-                                    egui::Color32::from_white_alpha(alpha)
-                                        * ui.visuals().text_color(),
-                                    egui::Color32::from_black_alpha(alpha / 4),
-                                    2.0,
-                                );
+                                if self.is_outline {
+                                    outlined_text(
+                                        ui,
+                                        &pressed_str,
+                                        ui.cursor().min,
+                                        56.0,
+                                        egui::Color32::from_white_alpha(alpha)
+                                            * ui.visuals().text_color(),
+                                        egui::Color32::from_black_alpha(alpha / 4),
+                                        2.0,
+                                    );
+                                } else {
+                                    ui.label(egui::RichText::new(pressed_str).size(56.0).color(
+                                        egui::Color32::from_white_alpha(alpha)
+                                            * ui.visuals().text_color(),
+                                    ));
+                                }
                             } else {
-                                ui.label(egui::RichText::new(pressed_str).size(56.0).color(
-                                    egui::Color32::from_white_alpha(alpha)
-                                        * ui.visuals().text_color(),
-                                ));
+                                ui.label("");
                             }
-                        } else {
-                            ui.label("");
-                        }
+                        });
                     });
 
                 if !self.is_overlay {
@@ -270,6 +316,8 @@ impl eframe::App for App {
                         .show(ui.ctx(), |ui| {
                             ui.horizontal(|ui| {
                                 ui.checkbox(&mut self.is_outline, "Outline Text");
+                                ui.checkbox(&mut self.is_show_mouse, "Show Mouse");
+
                                 if ui.button("Overlay").clicked() {
                                     self.is_overlay = true;
 
