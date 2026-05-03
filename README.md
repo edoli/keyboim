@@ -11,11 +11,11 @@ Keyboim is a Windows key input overlay. It captures global keyboard and mouse in
 
 Normal mode:
 
-![Keyboim normal mode](https://github.com/user-attachments/assets/7ca45742-72fe-4da6-ae3f-dc3979874fb1)
+![Keyboim normal mode](https://github.com/user-attachments/assets/e939f520-d554-4373-b8c5-9a2ac0686f52)
 
 Overlay mode:
 
-![Keyboim overlay mode](https://github.com/user-attachments/assets/e939f520-d554-4373-b8c5-9a2ac0686f52)
+![Keyboim overlay mode](https://github.com/user-attachments/assets/7ca45742-72fe-4da6-ae3f-dc3979874fb1)
 
 ## Features
 
