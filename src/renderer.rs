@@ -854,44 +854,235 @@ fn push_polyline(
     width: f32,
     closed: bool,
 ) {
-    if points.len() < 2 {
+    let cleaned = prepare_polyline_points(points, closed);
+    let closed = closed && cleaned.len() > 2;
+    if cleaned.len() < 2 {
         return;
     }
+
     let tint = color_to_f32(color);
     let half = width * 0.5;
-    let segments = if closed { points.len() } else { points.len() - 1 };
+    let mut left_side = Vec::with_capacity(cleaned.len());
+    let mut right_side = Vec::with_capacity(cleaned.len());
 
+    for index in 0..cleaned.len() {
+        let (left, right) = if !closed && index == 0 {
+            let normal = match segment_normal(cleaned[0], cleaned[1]) {
+                Some(normal) => normal,
+                None => continue,
+            };
+            (
+                offset_point(cleaned[0], normal.scale(half)),
+                offset_point(cleaned[0], normal.scale(-half)),
+            )
+        } else if !closed && index == cleaned.len() - 1 {
+            let normal = match segment_normal(cleaned[index - 1], cleaned[index]) {
+                Some(normal) => normal,
+                None => continue,
+            };
+            (
+                offset_point(cleaned[index], normal.scale(half)),
+                offset_point(cleaned[index], normal.scale(-half)),
+            )
+        } else {
+            let prev_index = if index == 0 { cleaned.len() - 1 } else { index - 1 };
+            let next_index = if index + 1 == cleaned.len() { 0 } else { index + 1 };
+            (
+                join_offset_point(
+                    cleaned[prev_index],
+                    cleaned[index],
+                    cleaned[next_index],
+                    half,
+                    1.0,
+                ),
+                join_offset_point(
+                    cleaned[prev_index],
+                    cleaned[index],
+                    cleaned[next_index],
+                    half,
+                    -1.0,
+                ),
+            )
+        };
+        left_side.push(left);
+        right_side.push(right);
+    }
+
+    if left_side.len() < 2 || right_side.len() < 2 {
+        return;
+    }
+
+    let base = vertices.len() as u32;
+    for index in 0..left_side.len() {
+        vertices.push(SolidVertex {
+            position: [left_side[index].x, left_side[index].y],
+            color: tint,
+        });
+        vertices.push(SolidVertex {
+            position: [right_side[index].x, right_side[index].y],
+            color: tint,
+        });
+    }
+
+    let segments = if closed { left_side.len() } else { left_side.len() - 1 };
     for index in 0..segments {
-        let a = points[index];
-        let b = points[(index + 1) % points.len()];
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
-        let len = (dx * dx + dy * dy).sqrt();
-        if len <= f32::EPSILON {
+        let next = (index + 1) % left_side.len();
+        let current_left = base + (index as u32 * 2);
+        let current_right = current_left + 1;
+        let next_left = base + (next as u32 * 2);
+        let next_right = next_left + 1;
+        indices.extend_from_slice(&[
+            current_left,
+            current_right,
+            next_right,
+            current_left,
+            next_right,
+            next_left,
+        ]);
+    }
+}
+
+fn prepare_polyline_points(points: &[Point], closed: bool) -> Vec<Point> {
+    let mut cleaned = Vec::with_capacity(points.len());
+    for &point in points {
+        if cleaned
+            .last()
+            .map(|last| squared_distance(*last, point) <= 0.0001)
+            .unwrap_or(false)
+        {
             continue;
         }
-        let nx = -dy / len * half;
-        let ny = dx / len * half;
-        let base = vertices.len() as u32;
-        vertices.extend_from_slice(&[
-            SolidVertex {
-                position: [a.x + nx, a.y + ny],
-                color: tint,
-            },
-            SolidVertex {
-                position: [a.x - nx, a.y - ny],
-                color: tint,
-            },
-            SolidVertex {
-                position: [b.x - nx, b.y - ny],
-                color: tint,
-            },
-            SolidVertex {
-                position: [b.x + nx, b.y + ny],
-                color: tint,
-            },
-        ]);
-        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        cleaned.push(point);
+    }
+
+    if closed
+        && cleaned.len() > 1
+        && squared_distance(cleaned[0], *cleaned.last().unwrap()) <= 0.0001
+    {
+        cleaned.pop();
+    }
+
+    cleaned
+}
+
+fn join_offset_point(prev: Point, current: Point, next: Point, half: f32, side: f32) -> Point {
+    let Some(prev_dir) = normalized_direction(prev, current) else {
+        return current;
+    };
+    let Some(next_dir) = normalized_direction(current, next) else {
+        return current;
+    };
+
+    let prev_normal = prev_dir.perpendicular().scale(side);
+    let next_normal = next_dir.perpendicular().scale(side);
+    let prev_origin = offset_point(current, prev_normal.scale(half));
+    let next_origin = offset_point(current, next_normal.scale(half));
+
+    if let Some(intersection) = line_intersection(
+        prev_origin,
+        prev_dir,
+        next_origin,
+        next_dir,
+    ) {
+        let offset = Vec2::from_points(current, intersection);
+        let miter_limit = half * 4.0;
+        if offset.length() <= miter_limit {
+            return intersection;
+        }
+    }
+
+    let average_normal = prev_normal.add(next_normal);
+    if let Some(normalized) = average_normal.normalized() {
+        return offset_point(current, normalized.scale(half));
+    }
+
+    offset_point(current, prev_normal.scale(half))
+}
+
+fn segment_normal(a: Point, b: Point) -> Option<Vec2> {
+    normalized_direction(a, b).map(|direction| direction.perpendicular())
+}
+
+fn normalized_direction(a: Point, b: Point) -> Option<Vec2> {
+    Vec2::from_points(a, b).normalized()
+}
+
+fn line_intersection(origin_a: Point, dir_a: Vec2, origin_b: Point, dir_b: Vec2) -> Option<Point> {
+    let determinant = dir_a.cross(dir_b);
+    if determinant.abs() <= 0.0001 {
+        return None;
+    }
+
+    let delta = Vec2::from_points(origin_a, origin_b);
+    let distance = delta.cross(dir_b) / determinant;
+    Some(offset_point(origin_a, dir_a.scale(distance)))
+}
+
+fn offset_point(point: Point, offset: Vec2) -> Point {
+    Point {
+        x: point.x + offset.x,
+        y: point.y + offset.y,
+    }
+}
+
+fn squared_distance(a: Point, b: Point) -> f32 {
+    let dx = b.x - a.x;
+    let dy = b.y - a.y;
+    dx * dx + dy * dy
+}
+
+#[derive(Clone, Copy)]
+struct Vec2 {
+    x: f32,
+    y: f32,
+}
+
+impl Vec2 {
+    fn from_points(a: Point, b: Point) -> Self {
+        Self {
+            x: b.x - a.x,
+            y: b.y - a.y,
+        }
+    }
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            x: self.x + other.x,
+            y: self.y + other.y,
+        }
+    }
+
+    fn scale(self, scalar: f32) -> Self {
+        Self {
+            x: self.x * scalar,
+            y: self.y * scalar,
+        }
+    }
+
+    fn perpendicular(self) -> Self {
+        Self {
+            x: -self.y,
+            y: self.x,
+        }
+    }
+
+    fn normalized(self) -> Option<Self> {
+        let length = self.length();
+        if length <= f32::EPSILON {
+            return None;
+        }
+        Some(Self {
+            x: self.x / length,
+            y: self.y / length,
+        })
+    }
+
+    fn cross(self, other: Self) -> f32 {
+        self.x * other.y - self.y * other.x
+    }
+
+    fn length(self) -> f32 {
+        (self.x * self.x + self.y * self.y).sqrt()
     }
 }
 
