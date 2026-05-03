@@ -579,12 +579,16 @@ pub fn run(config: AppConfig) -> Result<()> {
     let (gl_window, mut renderer) = create_gl_window(&event_loop)?;
     platform::configure_window(&gl_window.window)?;
 
-    if config.enable_hooks {
+    let enable_hooks = config.enable_hooks;
+    let mut runtime = AppRuntime::new(config, gl_window.window.scale_factor() as f32)?;
+    let gl_window = gl_window;
+    runtime.render(&mut renderer, &gl_window)?;
+    platform::show_ready_window(&gl_window.window)?;
+
+    if enable_hooks {
         spawn_input_threads(proxy);
     }
 
-    let mut runtime = AppRuntime::new(config, gl_window.window.scale_factor() as f32)?;
-    let gl_window = gl_window;
     gl_window.window.request_redraw();
 
     #[allow(deprecated)]

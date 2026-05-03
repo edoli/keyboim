@@ -25,7 +25,7 @@ use raw_window_handle::HasWindowHandle as _;
 use winit::{
     dpi::PhysicalSize,
     event_loop::EventLoop,
-    window::{Window, WindowAttributes},
+    window::{Window, WindowAttributes, WindowLevel},
 };
 
 use crate::ui::{Color, CornerRadii, DrawCommand, Point, Rect, UiScene, BASE_WINDOW_HEIGHT, BASE_WINDOW_WIDTH};
@@ -64,6 +64,8 @@ pub fn create_gl_window<T>(event_loop: &EventLoop<T>) -> Result<(GlWindow, Rende
         .with_transparent(true)
         .with_decorations(false)
         .with_resizable(false)
+        .with_visible(false)
+        .with_window_level(WindowLevel::AlwaysOnTop)
         .with_inner_size(winit::dpi::LogicalSize::new(
             BASE_WINDOW_WIDTH as f64,
             BASE_WINDOW_HEIGHT as f64,
@@ -274,7 +276,7 @@ impl Renderer {
             0,
             glow::RED,
             glow::UNSIGNED_BYTE,
-            glow::PixelUnpackData::Slice(Some(&vec![0u8; 2048 * 2048])),
+            glow::PixelUnpackData::Slice(None),
         );
 
         gl.enable(glow::BLEND);
