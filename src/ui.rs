@@ -1,7 +1,7 @@
 use crate::mouse;
 
 pub const BASE_WINDOW_WIDTH: f32 = 640.0;
-pub const BASE_WINDOW_HEIGHT: f32 = 160.0;
+pub const BASE_WINDOW_HEIGHT: f32 = 120.0;
 pub const TITLE_BAR_HEIGHT: f32 = 32.0;
 pub const TITLE_SIDE_PADDING: f32 = 10.0;
 const BODY_CORNER_RADIUS: f32 = 4.0;
