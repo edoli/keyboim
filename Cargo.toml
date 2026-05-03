@@ -4,18 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0"
+bytemuck = { version = "1.24", features = ["derive"] }
+fontdue = "0.9"
+glow = "0.16"
+glutin = "0.32"
+glutin-winit = "0.5"
+image = { version = "0.25", default-features = false, features = ["png"] }
 raw-window-handle = "0.6.2"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Dwm",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Controls",
     "Win32_System_LibraryLoader",
     "Win32_Globalization",
 ] }
 winit = { version = "0.30" }
-egui = "0.32"
-egui-winit = "0.32"
-eframe = { version = "0.32", features = ["glow"] }
 indexmap = "2.11.4"
 
 [build-dependencies]
