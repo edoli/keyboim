@@ -5,7 +5,12 @@ use winit::window::Window;
 #[cfg(target_os = "windows")]
 use windows::Win32::{
     Foundation::{COLORREF, HWND},
-    Graphics::Dwm::DwmExtendFrameIntoClientArea,
+    Graphics::Dwm::{
+        DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMNCRP_DISABLED,
+        DWMWA_ALLOW_NCPAINT, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR,
+        DWMWA_COLOR_NONE, DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE,
+        DWMWCP_DONOTROUND,
+    },
     UI::Controls::MARGINS,
     UI::WindowsAndMessaging::{
         GetWindowLongW, SetLayeredWindowAttributes, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
@@ -22,7 +27,9 @@ pub fn configure_window(window: &Window) -> Result<()> {
     #[cfg(target_os = "windows")]
     unsafe {
         let hwnd = hwnd(window)?;
-        let ex_style = borderless_ex_style(GetWindowLongW(hwnd, GWL_EXSTYLE)) | WS_EX_LAYERED.0 as i32;
+        apply_non_client_policy(hwnd).ok();
+        let ex_style =
+            borderless_ex_style(GetWindowLongW(hwnd, GWL_EXSTYLE)) | WS_EX_LAYERED.0 as i32;
         SetWindowLongW(hwnd, GWL_STYLE, borderless_style(GetWindowLongW(hwnd, GWL_STYLE)));
         SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style);
         SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA).ok();
@@ -54,6 +61,7 @@ pub fn set_click_through(window: &Window, enabled: bool) -> Result<()> {
     #[cfg(target_os = "windows")]
     unsafe {
         let hwnd = hwnd(window)?;
+        apply_non_client_policy(hwnd).ok();
         SetWindowLongW(hwnd, GWL_STYLE, borderless_style(GetWindowLongW(hwnd, GWL_STYLE)));
         let mut ex_style = borderless_ex_style(GetWindowLongW(hwnd, GWL_EXSTYLE));
         ex_style |= WS_EX_LAYERED.0 as i32;
@@ -75,6 +83,46 @@ pub fn set_click_through(window: &Window, enabled: bool) -> Result<()> {
         .ok();
     }
 
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn apply_non_client_policy(hwnd: HWND) -> windows::core::Result<()> {
+    let nc_rendering_policy = DWMNCRP_DISABLED;
+    let allow_nc_paint: i32 = 0;
+    let color_none = DWMWA_COLOR_NONE;
+    let corner_preference = DWMWCP_DONOTROUND;
+
+    DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_NCRENDERING_POLICY,
+        &nc_rendering_policy as *const _ as *const _,
+        std::mem::size_of_val(&nc_rendering_policy) as u32,
+    )?;
+    DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_ALLOW_NCPAINT,
+        &allow_nc_paint as *const _ as *const _,
+        std::mem::size_of_val(&allow_nc_paint) as u32,
+    )?;
+    DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_BORDER_COLOR,
+        &color_none as *const _ as *const _,
+        std::mem::size_of_val(&color_none) as u32,
+    )?;
+    DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_CAPTION_COLOR,
+        &color_none as *const _ as *const _,
+        std::mem::size_of_val(&color_none) as u32,
+    )?;
+    DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_WINDOW_CORNER_PREFERENCE,
+        &corner_preference as *const _ as *const _,
+        std::mem::size_of_val(&corner_preference) as u32,
+    )?;
     Ok(())
 }
 

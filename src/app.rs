@@ -550,6 +550,14 @@ impl AppRuntime {
     fn has_pending_automation(&self) -> bool {
         self.automation.is_some()
     }
+
+    fn sync_platform_window(&self, window: &Window) -> Result<()> {
+        platform::configure_window(window)?;
+        if !self.suppress_platform_click_through {
+            platform::set_click_through(window, self.state.overlay)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -604,6 +612,14 @@ pub fn run(config: AppConfig) -> Result<()> {
                         runtime.scale_factor = scale_factor as f32;
                         runtime.invalidate_scene();
                         gl_window.window.request_redraw();
+                    }
+                    WindowEvent::Focused(_) => {
+                        if let Err(error) = runtime.sync_platform_window(&gl_window.window) {
+                            eprintln!("{error:#}");
+                            target.exit();
+                        } else {
+                            gl_window.window.request_redraw();
+                        }
                     }
                     WindowEvent::CursorMoved { position, .. } => {
                         if runtime.handle_cursor_moved(Point {
