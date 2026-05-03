@@ -756,64 +756,117 @@ fn push_rounded_rect_stroke(
     color: Color,
     width: f32,
 ) {
-    let points = rounded_rect_points(rect, radii);
-    push_polyline(vertices, indices, &points, color, width, true);
+    let half = width * 0.5;
+    let outer = rounded_rect_contour_points(rect, radii, half);
+    let inner = rounded_rect_contour_points(rect, radii, -half);
+    if outer.len() != inner.len() || outer.len() < 2 {
+        return;
+    }
+
+    let tint = color_to_f32(color);
+    let base = vertices.len() as u32;
+    for index in 0..outer.len() {
+        vertices.push(SolidVertex {
+            position: [outer[index].x, outer[index].y],
+            color: tint,
+        });
+        vertices.push(SolidVertex {
+            position: [inner[index].x, inner[index].y],
+            color: tint,
+        });
+    }
+
+    for index in 0..outer.len() {
+        let next = (index + 1) % outer.len();
+        let current_outer = base + (index as u32 * 2);
+        let current_inner = current_outer + 1;
+        let next_outer = base + (next as u32 * 2);
+        let next_inner = next_outer + 1;
+        indices.extend_from_slice(&[
+            current_outer,
+            current_inner,
+            next_inner,
+            current_outer,
+            next_inner,
+            next_outer,
+        ]);
+    }
 }
 
-fn rounded_rect_points(rect: Rect, radii: CornerRadii) -> Vec<Point> {
-    let mut points = Vec::with_capacity(CORNER_SEGMENTS * 4 + 4);
-    append_arc(
+fn rounded_rect_contour_points(rect: Rect, radii: CornerRadii, offset: f32) -> Vec<Point> {
+    let inset_min_x = (rect.min.x + offset).min(rect.max.x);
+    let inset_min_y = (rect.min.y + offset).min(rect.max.y);
+    let inset_max_x = (rect.max.x - offset).max(inset_min_x);
+    let inset_max_y = (rect.max.y - offset).max(inset_min_y);
+    let contour_rect = Rect {
+        min: Point {
+            x: inset_min_x,
+            y: inset_min_y,
+        },
+        max: Point {
+            x: inset_max_x,
+            y: inset_max_y,
+        },
+    };
+
+    let contour_radii = CornerRadii {
+        top_left: (radii.top_left + offset).max(0.0),
+        top_right: (radii.top_right + offset).max(0.0),
+        bottom_right: (radii.bottom_right + offset).max(0.0),
+        bottom_left: (radii.bottom_left + offset).max(0.0),
+    };
+
+    let mut points = Vec::with_capacity((CORNER_SEGMENTS + 1) * 4);
+    append_contour_arc(
         &mut points,
         Point {
-            x: rect.max.x - radii.top_right,
-            y: rect.min.y + radii.top_right,
+            x: contour_rect.max.x - contour_radii.top_right,
+            y: contour_rect.min.y + contour_radii.top_right,
         },
-        radii.top_right,
+        contour_radii.top_right,
         -90.0,
         0.0,
     );
-    append_arc(
+    append_contour_arc(
         &mut points,
         Point {
-            x: rect.max.x - radii.bottom_right,
-            y: rect.max.y - radii.bottom_right,
+            x: contour_rect.max.x - contour_radii.bottom_right,
+            y: contour_rect.max.y - contour_radii.bottom_right,
         },
-        radii.bottom_right,
+        contour_radii.bottom_right,
         0.0,
         90.0,
     );
-    append_arc(
+    append_contour_arc(
         &mut points,
         Point {
-            x: rect.min.x + radii.bottom_left,
-            y: rect.max.y - radii.bottom_left,
+            x: contour_rect.min.x + contour_radii.bottom_left,
+            y: contour_rect.max.y - contour_radii.bottom_left,
         },
-        radii.bottom_left,
+        contour_radii.bottom_left,
         90.0,
         180.0,
     );
-    append_arc(
+    append_contour_arc(
         &mut points,
         Point {
-            x: rect.min.x + radii.top_left,
-            y: rect.min.y + radii.top_left,
+            x: contour_rect.min.x + contour_radii.top_left,
+            y: contour_rect.min.y + contour_radii.top_left,
         },
-        radii.top_left,
+        contour_radii.top_left,
         180.0,
         270.0,
     );
     points
 }
 
-fn append_arc(points: &mut Vec<Point>, center: Point, radius: f32, start_deg: f32, end_deg: f32) {
-    if radius <= 0.0 {
-        let rad = end_deg.to_radians();
-        points.push(Point {
-            x: center.x + rad.cos() * radius,
-            y: center.y + rad.sin() * radius,
-        });
-        return;
-    }
+fn append_contour_arc(
+    points: &mut Vec<Point>,
+    center: Point,
+    radius: f32,
+    start_deg: f32,
+    end_deg: f32,
+) {
     for step in 0..=CORNER_SEGMENTS {
         let t = step as f32 / CORNER_SEGMENTS as f32;
         let angle = (start_deg + (end_deg - start_deg) * t).to_radians();
