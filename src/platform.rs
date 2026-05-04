@@ -4,43 +4,39 @@ use winit::window::Window;
 
 #[cfg(target_os = "windows")]
 use windows::Win32::{
-    Foundation::{COLORREF, HWND},
+    Foundation::{COLORREF, HWND, LPARAM, LRESULT, WPARAM},
     Graphics::Dwm::{
-        DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMNCRP_DISABLED,
-        DWMWA_ALLOW_NCPAINT, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR,
-        DWMWA_COLOR_NONE, DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE,
-        DWMWCP_DONOTROUND,
+        DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMWA_ALLOW_NCPAINT, DWMWA_BORDER_COLOR,
+        DWMWA_CAPTION_COLOR, DWMWA_COLOR_NONE, DWMWA_NCRENDERING_POLICY,
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
     },
-    UI::Controls::MARGINS,
+    UI::Shell::{DefSubclassProc, SetWindowSubclass},
     UI::WindowsAndMessaging::{
         GetWindowLongW, SetLayeredWindowAttributes, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
         GWL_STYLE, HWND_TOPMOST, LWA_ALPHA, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
         SWP_NOSIZE, SWP_NOOWNERZORDER, SWP_SHOWWINDOW, WS_BORDER, WS_CAPTION, WS_DLGFRAME,
         WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_LAYERED, WS_EX_STATICEDGE,
-        WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP,
-        WS_SYSMENU, WS_THICKFRAME,
+        WS_EX_NOACTIVATE, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX,
+        WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME, WM_NCACTIVATE, WM_NCCALCSIZE,
+        WM_NCPAINT, WM_STYLECHANGING, STYLESTRUCT,
     },
 };
 
-pub fn configure_window(window: &Window) -> Result<()> {
-    window.set_decorations(false);
+#[cfg(target_os = "windows")]
+const BORDERLESS_SUBCLASS_ID: usize = 1;
 
+pub fn configure_window(window: &Window) -> Result<()> {
     #[cfg(target_os = "windows")]
     unsafe {
         let hwnd = hwnd(window)?;
+        install_borderless_subclass(hwnd)?;
         apply_non_client_policy(hwnd).ok();
-        let ex_style =
-            borderless_ex_style(GetWindowLongW(hwnd, GWL_EXSTYLE)) | WS_EX_LAYERED.0 as i32;
+        let ex_style = borderless_ex_style(GetWindowLongW(hwnd, GWL_EXSTYLE))
+            | WS_EX_LAYERED.0 as i32
+            | WS_EX_NOACTIVATE.0 as i32;
         SetWindowLongW(hwnd, GWL_STYLE, borderless_style(GetWindowLongW(hwnd, GWL_STYLE)));
         SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style);
         SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA).ok();
-        let margins = MARGINS {
-            cxLeftWidth: -1,
-            cxRightWidth: -1,
-            cyTopHeight: -1,
-            cyBottomHeight: -1,
-        };
-        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
         SetWindowPos(
             hwnd,
             HWND_TOPMOST,
@@ -57,15 +53,15 @@ pub fn configure_window(window: &Window) -> Result<()> {
 }
 
 pub fn set_click_through(window: &Window, enabled: bool) -> Result<()> {
-    window.set_decorations(false);
-
     #[cfg(target_os = "windows")]
     unsafe {
         let hwnd = hwnd(window)?;
+        install_borderless_subclass(hwnd)?;
         apply_non_client_policy(hwnd).ok();
         SetWindowLongW(hwnd, GWL_STYLE, borderless_style(GetWindowLongW(hwnd, GWL_STYLE)));
         let mut ex_style = borderless_ex_style(GetWindowLongW(hwnd, GWL_EXSTYLE));
         ex_style |= WS_EX_LAYERED.0 as i32;
+        ex_style |= WS_EX_NOACTIVATE.0 as i32;
         if enabled {
             ex_style |= WS_EX_TRANSPARENT.0 as i32;
         } else {
@@ -91,6 +87,7 @@ pub fn show_ready_window(window: &Window) -> Result<()> {
     #[cfg(target_os = "windows")]
     unsafe {
         let hwnd = hwnd(window)?;
+        install_borderless_subclass(hwnd)?;
         apply_non_client_policy(hwnd).ok();
         SetWindowPos(
             hwnd,
@@ -113,6 +110,45 @@ pub fn show_ready_window(window: &Window) -> Result<()> {
     window.set_visible(true);
 
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn install_borderless_subclass(hwnd: HWND) -> windows::core::Result<()> {
+    SetWindowSubclass(
+        hwnd,
+        Some(borderless_subclass_proc),
+        BORDERLESS_SUBCLASS_ID,
+        0,
+    )
+    .ok()
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn borderless_subclass_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _subclass_id: usize,
+    _ref_data: usize,
+) -> LRESULT {
+    match msg {
+        WM_NCCALCSIZE | WM_NCPAINT => LRESULT(0),
+        WM_NCACTIVATE => LRESULT(1),
+        WM_STYLECHANGING => {
+            if lparam.0 != 0 {
+                let style = &mut *(lparam.0 as *mut STYLESTRUCT);
+                if wparam.0 as i32 == GWL_STYLE.0 {
+                    style.styleNew = borderless_style_bits(style.styleNew);
+                } else if wparam.0 as i32 == GWL_EXSTYLE.0 {
+                    style.styleNew =
+                        borderless_ex_style_bits(style.styleNew) | WS_EX_LAYERED.0 | WS_EX_NOACTIVATE.0;
+                }
+            }
+            DefSubclassProc(hwnd, msg, wparam, lparam)
+        }
+        _ => DefSubclassProc(hwnd, msg, wparam, lparam),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -157,6 +193,11 @@ unsafe fn apply_non_client_policy(hwnd: HWND) -> windows::core::Result<()> {
 
 #[cfg(target_os = "windows")]
 fn borderless_style(style: i32) -> i32 {
+    borderless_style_bits(style as u32) as i32
+}
+
+#[cfg(target_os = "windows")]
+fn borderless_style_bits(style: u32) -> u32 {
     let frame_mask = (WS_CAPTION.0
         | WS_THICKFRAME.0
         | WS_SYSMENU.0
@@ -164,16 +205,21 @@ fn borderless_style(style: i32) -> i32 {
         | WS_MAXIMIZEBOX.0
         | WS_BORDER.0
         | WS_DLGFRAME.0) as i32;
-    (style & !frame_mask) | WS_POPUP.0 as i32
+    (style & !(frame_mask as u32)) | WS_POPUP.0
 }
 
 #[cfg(target_os = "windows")]
 fn borderless_ex_style(ex_style: i32) -> i32 {
+    borderless_ex_style_bits(ex_style as u32) as i32
+}
+
+#[cfg(target_os = "windows")]
+fn borderless_ex_style_bits(ex_style: u32) -> u32 {
     let frame_mask = (WS_EX_DLGMODALFRAME.0
         | WS_EX_CLIENTEDGE.0
         | WS_EX_STATICEDGE.0
         | WS_EX_WINDOWEDGE.0) as i32;
-    ex_style & !frame_mask
+    ex_style & !(frame_mask as u32)
 }
 
 #[cfg(target_os = "windows")]
